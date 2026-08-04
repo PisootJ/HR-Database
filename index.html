@@ -1803,17 +1803,36 @@ var HOSP_SHORT = {
 function renderStabHeatmap(depts, hosps) {
   var rateMap = {};
   STAB_DEPT_TYPE.forEach(function(d){ rateMap[d.dept+'|'+d.hosp]=d.rate; });
+
+  // Sort depts: complete-coverage first (all hosps), partial at bottom; within each group sort by avg stability DESC
+  depts = depts.slice().sort(function(a,b){
+    var cntA = hosps.filter(function(h){return rateMap[a+'|'+h]!==undefined;}).length;
+    var cntB = hosps.filter(function(h){return rateMap[b+'|'+h]!==undefined;}).length;
+    var aPartial = cntA < hosps.length;
+    var bPartial = cntB < hosps.length;
+    // Partial-coverage always goes to bottom
+    if(aPartial !== bPartial) return aPartial ? 1 : -1;
+    // Within partial group: more coverage first; if tied, higher avg stability first
+    if(aPartial && bPartial){
+      if(cntA !== cntB) return cntB - cntA;
+    }
+    // Within complete group (or tied partial): sort by avg stability DESC
+    var avgA = hosps.reduce(function(s,h){var r=rateMap[a+'|'+h];return s+(r||0);},0)/(cntA||1);
+    var avgB = hosps.reduce(function(s,h){var r=rateMap[b+'|'+h];return s+(r||0);},0)/(cntB||1);
+    return avgB - avgA;
+  });
+
   var colW = (67/hosps.length).toFixed(2)+'%';
   var t = '<table style="border-collapse:collapse;font-size:11px;width:100%;table-layout:fixed"><thead><tr>';
-  t += '<th style="padding:4px 8px;background:#f0e8dc;position:sticky;left:0;z-index:2;width:33%">แผนก</th>';
+  t += '<th style="padding:4px 8px;background:#f0e8dc;position:sticky;left:0;z-index:2;width:33%;text-align:center;font-size:24px;font-weight:700;color:#4a2e14">แผนก</th>';
   hosps.forEach(function(h){
     var sh = HOSP_SHORT[h] || (h.length>8?h.slice(0,8)+'..':h);
-    t += '<th style="padding:2px 2px;background:#f0e8dc;text-align:center;width:'+colW+';height:130px;vertical-align:bottom" title="'+h+'">'
-       + '<div style="writing-mode:vertical-rl;transform:rotate(180deg);white-space:nowrap;font-size:14px;font-weight:700;color:#4a2e14;padding-bottom:6px;letter-spacing:0.3px">'+sh+'</div></th>';
+    t += '<th style="padding:2px 2px;background:#f0e8dc;text-align:center;width:'+colW+';height:150px;vertical-align:middle" title="'+h+'">'
+       + '<div style="writing-mode:vertical-rl;transform:rotate(180deg);white-space:nowrap;font-size:20px;font-weight:700;color:#4a2e14;letter-spacing:0.3px;text-align:center;display:flex;align-items:center;justify-content:center;height:100%">'+sh+'</div></th>';
   });
   t += '</tr></thead><tbody>';
   depts.forEach(function(dept){
-    t += '<tr><td style="padding:5px 8px;font-weight:600;background:#f5ede0;position:sticky;left:0;z-index:1;color:#5c3317;white-space:nowrap">'+dept+'</td>';
+    t += '<tr><td style="padding:6px 10px;font-weight:700;font-size:16px;background:#f5ede0;position:sticky;left:0;z-index:1;color:#5c3317;white-space:normal;word-break:break-word;max-width:300px">'+dept+'</td>';
     hosps.forEach(function(hosp){
       var key = dept+'|'+hosp;
       var rate = rateMap[key];
