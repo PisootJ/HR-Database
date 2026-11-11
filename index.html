@@ -374,16 +374,20 @@ window.onerror = function(msg, src, line, col, err) {
   </div>
   <div class="kpi-grid" id="profCmpKpi"></div>
   <div class="card">
-    <div class="card-title">สัดส่วนประเภทการจ้างแต่ละหน่วยบริการ (%) — <span id="profCmpTitle1"></span></div>
+    <div class="card-title">สัดส่วนประเภทการจ้างแต่ละหน่วยบริการ (%) — <span id="profCmpTitle1"></span> <span style="font-size:12px;font-weight:500;color:#a08670">(คลิกแท่งเพื่อดูรายชื่อ)</span></div>
     <canvas id="cProfCmpPct" height="95"></canvas>
   </div>
   <div class="card">
-    <div class="card-title">จำนวนคนแต่ละหน่วยบริการ — <span id="profCmpTitle2"></span></div>
+    <div class="card-title">จำนวนคนแต่ละหน่วยบริการ — <span id="profCmpTitle2"></span> <span style="font-size:12px;font-weight:500;color:#a08670">(คลิกแท่งเพื่อดูรายชื่อ)</span></div>
     <canvas id="cProfCmpCnt" height="95"></canvas>
   </div>
   <div class="card">
     <div class="card-title">ตารางเปรียบเทียบ — <span id="profCmpTitle3"></span></div>
     <div style="overflow-x:auto" id="profCmpTbl"></div>
+  </div>
+  <div class="card" id="profCmpStaffCard">
+    <div class="card-title">👥 รายชื่อเจ้าหน้าที่ — <span id="profCmpStaffTitle">คลิกแท่งกราฟ (หรือแถวในตาราง) ของแต่ละ รพ. เพื่อดูรายชื่อ</span></div>
+    <div id="profCmpStaff"><div style="text-align:center;color:#a08670;padding:22px;font-size:15px">🔒 รายชื่อเป็นข้อมูลส่วนบุคคล — ต้องเข้าสู่ระบบก่อนดู</div></div>
   </div>
 </div>
 </div><!-- end section-profcmp -->
@@ -2100,6 +2104,8 @@ function renderProfCmp(){
     {label:'อื่นๆ',data:rows.map(r=>mode?pct(r.other,r.total):r.other),backgroundColor:'#b8b8c8'}
   ];
   const base=(isPct)=>({responsive:true,
+    onClick:(evt,els,chart)=>{const pts=chart.getElementsAtEventForMode(evt,'index',{intersect:false},false);if(pts.length)showProfCmpStaff(pts[0].index);},
+    onHover:(evt,els)=>{evt.native.target.style.cursor=els.length?'pointer':'default';},
     plugins:{legend:{position:'top',labels:{font:{size:12},padding:14,boxWidth:16}},
       datalabels:{display:ctx=>{const v=ctx.dataset.data[ctx.dataIndex];return isPct?v>=5:v>0;},
         formatter:v=>isPct?v+'%':v,color:'#1f2937',font:{size:12,weight:'bold'}},
@@ -2121,7 +2127,7 @@ function renderProfCmp(){
     th('รายวัน','#fed7aa','#fdba74','#7c2d12')+th('%','#ffedd5')+
     th('อื่นๆ','#e2e2ea','#b8b8c8','#334155')+th('%','#f1f1f5')+`</tr></thead><tbody>`;
   rows.forEach(r=>{
-    h+=`<tr style="border-bottom:1px solid #f0e6da${r.total?'':';opacity:.5'}"><td style="padding:6px 10px;font-weight:600">${r.n}</td>`+
+    h+=`<tr onclick="showProfCmpStaff(${rows.indexOf(r)})" style="cursor:pointer;border-bottom:1px solid #f0e6da${r.total?'':';opacity:.5'}"><td style="padding:6px 10px;font-weight:600">${r.n}</td>`+
       num(r.total,'#4a2c17')+num(r.civil,'#1a3a80')+num(r.pkss,'#713f12')+num(r.gov,'#4c1d95')+num(r.monthly,'#0f766e')+
       num(r.stable,'#1e3a8a')+pc(r.stable,r.total,'#dbe8fe')+
       num(r.daily,'#7a3500')+pc(r.daily,r.total,'#ffe4cc')+
@@ -2132,6 +2138,44 @@ function renderProfCmp(){
     num(T.stable,'#1e3a8a')+pc(T.stable,T.total,'#dbe8fe')+num(T.daily,'#7a3500')+pc(T.daily,T.total,'#ffe4cc')+
     num(T.other,'#475569')+pc(T.other,T.total,'#e8e8ee')+`</tr></tbody></table>`;
   document.getElementById('profCmpTbl').innerHTML=h;
+  if(_pcSelH!=null && typeof __authed!=='undefined' && __authed) _renderProfCmpStaff(_pcSelH);
+  else { _pcSelH=null;
+    document.getElementById('profCmpStaffTitle').textContent='คลิกแท่งกราฟ (หรือแถวในตาราง) ของแต่ละ รพ. เพื่อดูรายชื่อ';
+    document.getElementById('profCmpStaff').innerHTML='<div style="text-align:center;color:#a08670;padding:22px;font-size:15px">🔒 รายชื่อเป็นข้อมูลส่วนบุคคล — ต้องเข้าสู่ระบบก่อนดู</div>'; }
+}
+var _pcSelH=null;
+function showProfCmpStaff(i){ requireAuth(()=>{ _pcSelH=i; _renderProfCmpStaff(i);
+  setTimeout(()=>document.getElementById('profCmpStaffCard').scrollIntoView({behavior:'smooth',block:'start'}),60); }); }
+function _renderProfCmpStaff(i){
+  const prof=document.getElementById('profCmpSel').value;
+  const hosp=H[i]?H[i].n:('H'+i);
+  const ORD={'ข้าราชการ':0,'พกส.':1,'พนักงานราชการ':2,'ลูกจ้างชั่วคราวรายเดือน':3,'ลูกจ้างชั่วคราวรายวัน':4};
+  const ord=t=>ORD[t]!==undefined?ORD[t]:5;
+  const staff=(EMP_DATA['H'+i]||[]).filter(e=>_pcGrp(e)===prof)
+    .sort((a,b)=>ord(a.t)-ord(b.t)||((b.age||0)-(a.age||0)));
+  document.getElementById('profCmpStaffTitle').textContent=hosp+' · '+prof+' ('+staff.length+' คน)';
+  const box=document.getElementById('profCmpStaff');
+  if(!staff.length){box.innerHTML='<div style="text-align:center;color:#aaa;padding:22px;font-size:15px">ไม่มี'+prof+'ใน '+hosp+'</div>';return;}
+  const grpOf=t=>ord(t)<=3?1:(ord(t)===4?2:3);
+  const GL={1:['ขรก. + พกส. + พนง.ราชการ + ลูกจ้างรายเดือน','#dbe8fe','#1e3a8a'],2:['ลูกจ้างชั่วคราวรายวัน','#ffe4cc','#7a3500'],3:['อื่นๆ','#e8e8ee','#334155']};
+  let h='<table style="width:100%;border-collapse:collapse;font-size:15px"><thead><tr style="background:#f5ede0;color:#4a2c17">'+
+    ['#','ชื่อ - นามสกุล','ประเภทการจ้าง','ตำแหน่ง','แผนก','อายุ','อายุงาน'].map((x,k)=>`<th style="padding:9px;text-align:${k===1||k===3||k===4?'left':'center'}">${x}</th>`).join('')+'</tr></thead><tbody>';
+  let cur=0,no=0;
+  staff.forEach(e=>{
+    const g=grpOf(e.t);
+    if(g!==cur){cur=g;const n=staff.filter(x=>grpOf(x.t)===g).length;
+      h+=`<tr><td colspan="7" style="background:${GL[g][1]};color:${GL[g][2]};font-weight:800;padding:7px 12px">${GL[g][0]} — ${n} คน</td></tr>`;}
+    const b=_empTypeBg(e.t);
+    h+=`<tr style="border-bottom:1px solid #f0e6da">
+      <td style="text-align:center;color:#999;padding:7px">${++no}</td>
+      <td style="font-weight:700;color:#2d3748;padding:7px">${e.n}${(e.grp||'').includes('ผู้อำนวยการ')?' <span style="background:#fde68a;color:#78350f;border-radius:8px;padding:1px 8px;font-size:12px">ผอ.</span>':''}</td>
+      <td style="text-align:center"><span style="background:${b.bg};color:${b.c};border-radius:10px;padding:2px 10px;font-size:13px;font-weight:700">${e.t||'-'}</span></td>
+      <td style="padding:7px;color:#555">${e.pos||'-'}</td>
+      <td style="padding:7px;color:#555">${e.dept||'-'}</td>
+      <td style="text-align:center;font-size:18px;font-weight:800;color:#7a4a1e">${e.age||'-'}</td>
+      <td style="text-align:center;color:#555">${e.yrs?e.yrs+' ปี':'-'}</td></tr>`;
+  });
+  box.innerHTML=h+'</tbody></table>';
 }
 
 function switchStab(tabId, btn) {
