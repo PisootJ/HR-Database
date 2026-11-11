@@ -506,7 +506,7 @@ const GRP_FIX={'ผูู้ช่วยพยาบาล':'ผู้ช่ว�
 const TK_MAP={'ข้าราชการ':'civil','พกส.':'pkss','พนักงานราชการ':'gov','ลูกจ้างชั่วคราวรายเดือน':'monthly','ลูกจ้างชั่วคราวรายวัน':'daily','ลูกจ้างประจำ':'regular'};
 const TYPE_OF_KIND={civil:'ข้าราชการ',pkss:'พกส.',gov:'พนักงานราชการ',daily:'ลูกจ้างชั่วคราวรายวัน'};
 const COL_DEF={no:0,prefix:1,first:2,last:3,dob:4,age:5,gen:6,grp:7,note:8,type:9,pos:10,start:11,yrs:12,edu:13,head:14,dept:15};
-window.__LIVE={rows:{},ok:[],fail:[],excl:{},time:null};
+window.__LIVE={rows:{},ok:[],fail:[],excl:{},warn:{},time:null};
 
 let _gvSeq=0;
 function gvizFetch(id){
@@ -548,7 +548,7 @@ function _parseTable(tb, hi){
   const ci=_colIdx(tb.cols.map(c=>c.label));
   const cell=(row,i)=>{const c=row.c[i]; if(!c) return ''; return String(c.f!=null?c.f:(c.v!=null?c.v:'')).trim();};
   const num=(row,i)=>{const c=row.c[i]; if(!c) return null; const v=typeof c.v==='number'?c.v:parseInt(c.f||c.v,10); return isNaN(v)?null:Math.round(v);};
-  const out=[], excl=[];
+  const out=[], excl=[], warn=[];
   tb.rows.forEach((r,ri)=>{
     if(!r||!r.c) return;
     const first=cell(r,ci.first), last=cell(r,ci.last);
@@ -559,12 +559,13 @@ function _parseTable(tb, hi){
     const miss=[]; if(!name) miss.push('ชื่อ'); if(!grp) miss.push('กลุ่มวิชาชีพ'); if(!t) miss.push('ประเภทการจ้าง'); if(!dept && !DEPT_OPTIONAL.includes(hi)) miss.push('แผนก');
     if(miss.length){ excl.push({n:name||'(ไม่มีชื่อ)',row:LIVE_FIRST_ROW+ri,miss,t,grp,dept,pos}); return; }
     let g=grp, d=dept||NO_DEPT;
+    if(!dept) warn.push({n:name,row:LIVE_FIRST_ROW+ri,miss:['แผนก'],t,grp,dept:'',pos,kept:true});
     if(cell(r,ci.note).includes('ผู้อำนวยการ')){ if(g==='แพทย์') d='องค์กรแพทย์'; g=g+' (ผู้อำนวยการ)'; }
     const head=cell(r,ci.head);
     out.push({n:name,pre:cell(r,ci.prefix),grp:g,t,tk:TK_MAP[t]||'other',pos,start:cell(r,ci.start),yrs:cell(r,ci.yrs),
       age:num(r,ci.age),head:head?head.charAt(0).toUpperCase():null,dept:d,dob:_parseDob(r.c[ci.dob]),_row:LIVE_FIRST_ROW+ri});
   });
-  return {out,excl};
+  return {out,excl,warn};
 }
 
 const _isBlank=v=>!v||v==='ไม่ระบุ';
@@ -577,10 +578,10 @@ function __applyLive(kind, obj, sub){
       const k='H'+i;
       if(L.rows[k]){ obj[k]=L.rows[k]; continue; }
       const snap=obj[k]||[];   // snapshot fallback — same exclusion rule
-      const keep=[],ex=[];
-      snap.forEach(e=>{const miss=[]; if(_isBlank(e.grp))miss.push('กลุ่มวิชาชีพ'); if(_isBlank(e.t))miss.push('ประเภทการจ้าง'); if(_isBlank(e.dept)){ if(DEPT_OPTIONAL.includes(i)) e.dept=NO_DEPT; else miss.push('แผนก'); }
+      const keep=[],ex=[],wn=[];
+      snap.forEach(e=>{const miss=[]; if(_isBlank(e.grp))miss.push('กลุ่มวิชาชีพ'); if(_isBlank(e.t))miss.push('ประเภทการจ้าง'); if(_isBlank(e.dept)){ if(DEPT_OPTIONAL.includes(i)){ e.dept=NO_DEPT; wn.push({n:e.n,row:null,miss:['แผนก'],t:e.t,grp:e.grp,dept:'',pos:e.pos,kept:true}); } else miss.push('แผนก'); }
         if(miss.length) ex.push({n:e.n,row:null,miss,t:e.t,grp:e.grp,dept:e.dept,pos:e.pos}); else keep.push(e);});
-      obj[k]=keep; L.excl[k]=ex;
+      obj[k]=keep; L.excl[k]=ex; L.warn[k]=wn;
     }
     return;
   }
@@ -626,8 +627,8 @@ function __applyLive(kind, obj, sub){
   res.forEach((r,i)=>{
     const k='H'+i;
     if(r.status==='fulfilled'){
-      const {out,excl}=_parseTable(r.value,i);
-      if(out.length||excl.length){ L.rows[k]=out; L.excl[k]=excl; L.ok.push(i); return; }  // fetched OK (even if every row is incomplete)
+      const {out,excl,warn}=_parseTable(r.value,i);
+      if(out.length||excl.length){ L.rows[k]=out; L.excl[k]=excl; L.warn[k]=warn; L.ok.push(i); return; }  // fetched OK (even if every row is incomplete)
       L.fail.push({i,why:'ไม่พบข้อมูล'});
     } else L.fail.push({i,why:String(r.reason)});
   });
@@ -2465,12 +2466,13 @@ function __renderLiveBadge(){
   const L=window.__LIVE, hp=document.querySelector('.header p'); if(!hp) return;
   const now=L.time?L.time.toLocaleString('th-TH',{dateStyle:'medium',timeStyle:'short'}):'';
   const nExc=Object.values(L.excl).reduce((s,a)=>s+a.length,0);
+  const nWarn=Object.values(L.warn||{}).reduce((s,a)=>s+a.length,0);
   const failNames=L.fail.map(f=>LIVE_HNAMES[f.i]);
   hp.innerHTML='จังหวัดกาญจนบุรี &nbsp;|&nbsp; 15 หน่วยบริการ &nbsp;|&nbsp; '+
     (L.fail.length===0
       ? '<span style="background:#dcfce7;color:#166534;padding:2px 10px;border-radius:10px;font-weight:700">🟢 ข้อมูลสดจาก Google Sheets ครบ 15/15 · '+now+'</span>'
       : '<span style="background:#ffedd5;color:#9a3412;padding:2px 10px;border-radius:10px;font-weight:700">🟠 สด '+L.ok.length+'/15 · ใช้ข้อมูลสำรอง: '+failNames.join(', ')+'</span>')+
-    (nExc?' &nbsp;<span onclick="openExclPanel()" style="background:#fef9c3;color:#713f12;padding:2px 10px;border-radius:10px;font-weight:700;cursor:pointer;border:1px solid #fde047">⚠️ ข้อมูลไม่ครบ ตัดออก '+nExc+' คน — คลิกดูรายละเอียด</span>':'');
+    ((nExc||nWarn)?' &nbsp;<span onclick="openExclPanel()" style="background:#fef9c3;color:#713f12;padding:2px 10px;border-radius:10px;font-weight:700;cursor:pointer;border:1px solid #fde047">⚠️ ข้อมูลไม่ครบ '+(nExc+nWarn)+' คน (ตัดออก '+nExc+(nWarn?' · ยังนับแต่รอกรอกแผนก '+nWarn:'')+') — คลิกดูรายละเอียด</span>':'');
 }
 
 // ── incomplete-data panel ──
@@ -2484,32 +2486,34 @@ function openExclPanel(){
     document.body.appendChild(m);
   }
   const FIELDS=['ชื่อ','กลุ่มวิชาชีพ','ประเภทการจ้าง','แผนก'];
-  const rows=LIVE_HNAMES.map((n,i)=>{const ex=L.excl['H'+i]||[];const c={};FIELDS.forEach(f=>c[f]=ex.filter(x=>x.miss.includes(f)).length);
-    const total=(EMP_DATA['H'+i]||[]).length+ex.length; return {i,n,ex,c,total,live:L.ok.includes(i)};});
-  const sum=rows.reduce((s,r)=>s+r.ex.length,0);
-  const allT=rows.reduce((s,r)=>s+r.total,0);
+  const rows=LIVE_HNAMES.map((n,i)=>{const ex=L.excl['H'+i]||[], wn=(L.warn&&L.warn['H'+i])||[], all=ex.concat(wn); const c={};
+    FIELDS.forEach(f=>c[f]=all.filter(x=>x.miss.includes(f)).length);
+    const total=(EMP_DATA['H'+i]||[]).length+ex.length; return {i,n,ex,wn,all,c,total,live:L.ok.includes(i)};});
+  const sEx=rows.reduce((s,r)=>s+r.ex.length,0), sWn=rows.reduce((s,r)=>s+r.wn.length,0), allT=rows.reduce((s,r)=>s+r.total,0);
   const cnum=(v,col)=>`<td style="text-align:center;font-size:18px;font-weight:800;color:${v?col:'#ccc'}">${v||'–'}</td>`;
   let t=`<table style="width:100%;border-collapse:collapse;font-size:14px"><thead><tr style="background:#f5ede0;color:#4a2c17">
-    <th style="padding:9px;text-align:left">หน่วยบริการ</th><th style="padding:9px">บุคลากรใน Sheet</th><th style="padding:9px;background:#fecdd3">ตัดออก</th><th style="padding:9px">% ไม่ครบ</th>
+    <th style="padding:9px;text-align:left">หน่วยบริการ</th><th style="padding:9px">บุคลากรใน Sheet</th><th style="padding:9px;background:#fde68a">ไม่ครบ (รวม)</th><th style="padding:9px">% ไม่ครบ</th>
+    <th style="padding:9px;background:#fecdd3">ตัดออก</th><th style="padding:9px;background:#dbeafe">ยังนับ<br><span style="font-weight:500;font-size:11px">(รอกรอกแผนก)</span></th>
     <th style="padding:9px;background:#fef3c7">ไม่มีชื่อ</th><th style="padding:9px;background:#fef3c7">ไม่มีกลุ่มวิชาชีพ</th><th style="padding:9px;background:#fef3c7">ไม่มีประเภทการจ้าง</th><th style="padding:9px;background:#fef3c7">ไม่มีแผนก</th><th style="padding:9px">รายชื่อ</th></tr></thead><tbody>`;
-  rows.slice().sort((a,b)=>b.ex.length-a.ex.length).forEach(r=>{
-    const pct=r.total?(r.ex.length/r.total*100):0;
+  rows.slice().sort((a,b)=>b.all.length-a.all.length).forEach(r=>{
+    const pct=r.total?(r.all.length/r.total*100):0;
     const pbg=pct>=20?'#fecaca':pct>=10?'#fed7aa':pct>0?'#fef9c3':'transparent';
-    t+=`<tr style="border-bottom:1px solid #f0e6da${r.ex.length?'':';opacity:.55'}">
+    t+=`<tr style="border-bottom:1px solid #f0e6da${r.all.length?'':';opacity:.55'}">
       <td style="padding:8px 10px;font-weight:700">${r.n}${r.live?'':' <span style="font-size:11px;background:#ffedd5;color:#9a3412;border-radius:8px;padding:1px 6px">ข้อมูลสำรอง</span>'}
         <a href="https://docs.google.com/spreadsheets/d/${LIVE_SHEETS[r.i]}/edit" target="_blank" rel="noopener" style="font-size:11px;color:#2563eb;margin-left:6px">เปิด Sheet ↗</a></td>
-      <td style="text-align:center;color:#555">${r.total}</td>${cnum(r.ex.length,'#b42318')}
-      <td style="text-align:center;font-weight:700;background:${pbg}">${r.ex.length?pct.toFixed(1)+'%':''}</td>
+      <td style="text-align:center;color:#555">${r.total}</td>${cnum(r.all.length,'#92400e')}
+      <td style="text-align:center;font-weight:700;background:${pbg}">${r.all.length?pct.toFixed(1)+'%':''}</td>
+      ${cnum(r.ex.length,'#b42318')}${cnum(r.wn.length,'#1d4ed8')}
       ${cnum(r.c['ชื่อ'],'#92400e')}${cnum(r.c['กลุ่มวิชาชีพ'],'#92400e')}${cnum(r.c['ประเภทการจ้าง'],'#92400e')}${cnum(r.c['แผนก'],'#92400e')}
-      <td style="text-align:center">${r.ex.length?`<button onclick="showExclNames(${r.i})" style="border:1px solid #d4bfa8;background:#fff;border-radius:8px;padding:4px 10px;cursor:pointer;font-size:13px">🔒 ดูรายชื่อ</button>`:''}</td></tr>`;
+      <td style="text-align:center">${r.all.length?`<button onclick="showExclNames(${r.i})" style="border:1px solid #d4bfa8;background:#fff;border-radius:8px;padding:4px 10px;cursor:pointer;font-size:13px">🔒 ดูรายชื่อ</button>`:''}</td></tr>`;
   });
   const tc=FIELDS.map(f=>rows.reduce((s,r)=>s+r.c[f],0));
-  t+=`<tr style="background:#f5ede0;font-weight:800"><td style="padding:9px 10px">รวมทั้งจังหวัด</td><td style="text-align:center">${allT}</td>${cnum(sum,'#b42318')}
-    <td style="text-align:center">${allT?(sum/allT*100).toFixed(1)+'%':''}</td>${tc.map(v=>cnum(v,'#92400e')).join('')}<td></td></tr></tbody></table>`;
-  m.innerHTML=`<div style="background:#fff;border-radius:16px;max-width:1100px;width:100%;padding:22px 26px;box-shadow:0 10px 40px rgba(0,0,0,.15)">
+  t+=`<tr style="background:#f5ede0;font-weight:800"><td style="padding:9px 10px">รวมทั้งจังหวัด</td><td style="text-align:center">${allT}</td>${cnum(sEx+sWn,'#92400e')}
+    <td style="text-align:center">${allT?((sEx+sWn)/allT*100).toFixed(1)+'%':''}</td>${cnum(sEx,'#b42318')}${cnum(sWn,'#1d4ed8')}${tc.map(v=>cnum(v,'#92400e')).join('')}<td></td></tr></tbody></table>`;
+  m.innerHTML=`<div style="background:#fff;border-radius:16px;max-width:1150px;width:100%;padding:22px 26px;box-shadow:0 10px 40px rgba(0,0,0,.15)">
     <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px">
-      <div><div style="font-size:22px;font-weight:800;color:#4a2c17">⚠️ ข้อมูลไม่ครบ — ตัดออกจาก dashboard ${sum} คน</div>
-      <div style="font-size:13px;color:#8a6a50;margin-top:4px">แถวที่ ชื่อ / กลุ่มวิชาชีพ / ประเภทการจ้าง / แผนก ช่องใดช่องหนึ่งว่าง จะไม่ถูกนับในทุกหมวด · 1 คนอาจขาดได้หลายช่อง · แก้ใน Sheet แล้วกด F5 ข้อมูลจะกลับมาเอง</div></div>
+      <div><div style="font-size:22px;font-weight:800;color:#4a2c17">⚠️ ข้อมูลไม่ครบ ${sEx+sWn} คน <span style="font-size:15px;font-weight:700;color:#b42318">ตัดออก ${sEx}</span> <span style="font-size:15px;font-weight:700;color:#1d4ed8">· ยังนับ ${sWn}</span></div>
+      <div style="font-size:13px;color:#8a6a50;margin-top:4px">ตัดออก = ชื่อ / กลุ่มวิชาชีพ / ประเภทการจ้าง / แผนก ช่องใดช่องหนึ่งว่าง จึงไม่ถูกนับในทุกหมวด · ยังนับ = สสจ. ที่ยังไม่ลงแผนก (นับในทุกหมวด แต่อยู่ในกลุ่ม "ไม่ระบุแผนก") · แก้ใน Sheet แล้วกด F5 ข้อมูลจะอัพเดทเอง</div></div>
       <button onclick="document.getElementById('exclModal').style.display='none'" style="border:none;background:#f5ede0;border-radius:8px;padding:6px 12px;font-size:16px;cursor:pointer">✕</button></div>
     <div style="overflow-x:auto;margin-top:16px">${t}</div>
     <div id="exclNames" style="margin-top:18px"></div></div>`;
@@ -2517,7 +2521,7 @@ function openExclPanel(){
 }
 function showExclNames(i){
   requireAuth(()=>{
-    const ex=(window.__LIVE.excl['H'+i]||[]).slice().sort((a,b)=>(a.row||0)-(b.row||0));
+    const ex=(window.__LIVE.excl['H'+i]||[]).concat((window.__LIVE.warn&&window.__LIVE.warn['H'+i])||[]).sort((a,b)=>(a.row||0)-(b.row||0));
     const live=window.__LIVE.ok.includes(i);
     const tag=f=>`<span style="background:#fecdd3;color:#881337;border-radius:8px;padding:1px 8px;font-size:12px;font-weight:700;margin-right:4px">ไม่มี${f}</span>`;
     let h=`<div style="font-size:17px;font-weight:800;color:#4a2c17;margin-bottom:8px">${LIVE_HNAMES[i]} — ${ex.length} คน ${live?'':'<span style="font-size:12px;color:#9a3412">(จากข้อมูลสำรอง ไม่มีเลขแถว)</span>'}</div>
@@ -2525,7 +2529,7 @@ function showExclNames(i){
       <th style="padding:8px">แถวใน Sheet</th><th style="padding:8px;text-align:left">ชื่อ - นามสกุล</th><th style="padding:8px;text-align:left">ช่องที่ว่าง</th>
       <th style="padding:8px;text-align:left">กลุ่มวิชาชีพ</th><th style="padding:8px;text-align:left">ประเภทการจ้าง</th><th style="padding:8px;text-align:left">ตำแหน่ง</th><th style="padding:8px;text-align:left">แผนก</th></tr></thead><tbody>`;
     ex.forEach(x=>{h+=`<tr style="border-bottom:1px solid #f0e6da"><td style="text-align:center;font-weight:800;color:#7a4a1e;font-size:16px">${x.row||'–'}</td>
-      <td style="padding:7px;font-weight:700">${x.n}</td><td style="padding:7px">${x.miss.map(tag).join('')}</td>
+      <td style="padding:7px;font-weight:700">${x.n}</td><td style="padding:7px">${x.miss.map(tag).join('')}${x.kept?'<span style="background:#dbeafe;color:#1d4ed8;border-radius:8px;padding:1px 8px;font-size:12px;font-weight:700">ยังนับ</span>':'<span style="background:#fee2e2;color:#b42318;border-radius:8px;padding:1px 8px;font-size:12px;font-weight:700">ตัดออก</span>'}</td>
       <td style="padding:7px;color:#555">${x.grp&&x.grp!=='ไม่ระบุ'?x.grp:'–'}</td><td style="padding:7px;color:#555">${x.t||'–'}</td>
       <td style="padding:7px;color:#555">${x.pos||'–'}</td><td style="padding:7px;color:#555">${x.dept&&x.dept!=='ไม่ระบุ'?x.dept:'–'}</td></tr>`;});
     document.getElementById('exclNames').innerHTML=h+'</tbody></table>';
