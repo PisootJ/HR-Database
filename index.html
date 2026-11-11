@@ -370,7 +370,13 @@ window.onerror = function(msg, src, line, col, err) {
   <div style="font-size:22px;font-weight:800;color:#3d6b30;margin-bottom:12px">👩‍⚕️ วิชาชีพ × ประเภทการจ้าง — เปรียบเทียบรายหน่วยบริการ</div>
   <div class="card">
     <div class="card-title">เลือกวิชาชีพ</div>
-    <select id="profCmpSel" onchange="renderProfCmp()" style="width:100%;padding:10px 12px;border-radius:8px;border:1px solid #d4bfa8;font-size:16px;background:#fff"></select>
+    <select id="profCmpSel" onchange="renderProfCmp()" style="display:none"></select>
+    <div id="profSearchWrap" style="position:relative">
+      <input id="profSearch" type="text" autocomplete="off" placeholder="🔍 พิมพ์เพื่อค้นหาวิชาชีพ เช่น พยาบาล, เภสัช, ขับรถ…"
+        style="width:100%;box-sizing:border-box;padding:11px 40px 11px 14px;border-radius:8px;border:1px solid #d4bfa8;font-size:16px;background:#fff">
+      <span id="profSearchCaret" style="position:absolute;right:14px;top:50%;transform:translateY(-50%);color:#a08670;pointer-events:none">▾</span>
+      <div id="profSearchList" style="display:none;position:absolute;left:0;right:0;top:calc(100% + 4px);max-height:360px;overflow-y:auto;background:#fff;border:1px solid #d4bfa8;border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,.08);z-index:500"></div>
+    </div>
   </div>
   <div class="kpi-grid" id="profCmpKpi"></div>
   <div class="card">
@@ -2078,7 +2084,38 @@ function initProfCmp(){
   sel.innerHTML=Object.entries(cnt).sort((a,b)=>b[1]-a[1])
     .map(([g,n])=>`<option value="${g}">${g} (${n} คน)</option>`).join('');
   if(cnt['พยาบาลวิชาชีพ']) sel.value='พยาบาลวิชาชีพ';
+  _initProfSearch(Object.entries(cnt).sort((a,b)=>b[1]-a[1]));
   renderProfCmp();
+}
+function _initProfSearch(items){
+  const inp=document.getElementById('profSearch'), list=document.getElementById('profSearchList'), sel=document.getElementById('profCmpSel');
+  let shown=[], hi=-1;
+  const label=()=>{const it=items.find(x=>x[0]===sel.value);return it?`${it[0]} (${it[1]} คน)`:'';};
+  inp.value=label();
+  const draw=()=>{
+    const q=inp.value.trim().toLowerCase().replace(/\s+/g,'');
+    shown=items.filter(([g])=>!q||g.toLowerCase().replace(/\s+/g,'').includes(q));
+    if(!shown.length){list.innerHTML='<div style="padding:10px 14px;color:#aaa;font-size:15px">ไม่พบวิชาชีพที่ค้นหา</div>';hi=-1;return;}
+    if(hi>=shown.length) hi=shown.length-1;
+    list.innerHTML=shown.map(([g,n],k)=>{
+      let txt=g; if(q){const i=g.toLowerCase().replace(/\s+/g,'').indexOf(q); if(i>=0&&!/\s/.test(g)) txt=g.slice(0,i)+'<b style="background:#fef08a">'+g.slice(i,i+q.length)+'</b>'+g.slice(i+q.length);}
+      const on=k===hi, cur=g===sel.value;
+      return `<div data-k="${k}" style="padding:8px 14px;font-size:16px;cursor:pointer;display:flex;justify-content:space-between;background:${on?'#f5ede0':(cur?'#eef6e8':'#fff')}">
+        <span>${txt}</span><span style="color:#a08670;font-size:14px">${n} คน</span></div>`;}).join('');
+  };
+  const open=()=>{list.style.display='block';draw();};
+  const close=()=>{list.style.display='none';hi=-1;};
+  const pick=k=>{const it=shown[k]; if(!it) return; sel.value=it[0]; inp.value=label(); close(); inp.blur(); renderProfCmp();};
+  inp.addEventListener('focus',()=>{inp.select();hi=-1;list.style.display='block';const v=inp.value;inp.value='';draw();inp.value=v;inp.select();});
+  inp.addEventListener('input',()=>{hi=0;open();});
+  inp.addEventListener('keydown',e=>{
+    if(e.key==='ArrowDown'){e.preventDefault();if(list.style.display==='none')open();hi=Math.min(hi+1,shown.length-1);draw();list.children[hi]&&list.children[hi].scrollIntoView({block:'nearest'});}
+    else if(e.key==='ArrowUp'){e.preventDefault();hi=Math.max(hi-1,0);draw();list.children[hi]&&list.children[hi].scrollIntoView({block:'nearest'});}
+    else if(e.key==='Enter'){e.preventDefault();pick(hi>=0?hi:0);}
+    else if(e.key==='Escape'){inp.value=label();close();inp.blur();}
+  });
+  list.addEventListener('mousedown',e=>{const d=e.target.closest('[data-k]'); if(d){e.preventDefault();pick(+d.dataset.k);}});
+  inp.addEventListener('blur',()=>setTimeout(()=>{if(list.style.display!=='none'){inp.value=label();close();}},120));
 }
 function renderProfCmp(){
   const prof=document.getElementById('profCmpSel').value;
