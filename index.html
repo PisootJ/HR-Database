@@ -92,6 +92,19 @@ select{width:100%;padding:9px 12px;border-radius:8px;border:1px solid #d4bfa8;fo
 </style>
 </head>
 <body>
+<div id="loginOverlay" style="position:fixed;inset:0;z-index:10000;background:rgba(74,44,23,.35);display:none;align-items:center;justify-content:center;font-family:inherit">
+  <form id="loginForm" onsubmit="return doLogin(event)" style="background:#fff;border-radius:16px;padding:34px 38px;width:340px;box-shadow:0 8px 30px rgba(0,0,0,.08);border:1px solid #e8d5c0">
+    <div style="font-size:22px;font-weight:800;color:#4a2c17;margin-bottom:4px">🔒 ข้อมูลบุคลากร</div>
+    <div style="font-size:13px;color:#8a6a50;margin-bottom:20px">รายชื่อเป็นข้อมูลส่วนบุคคล — กรุณาเข้าสู่ระบบ</div>
+    <label style="font-size:13px;color:#4a2c17;font-weight:600">User</label>
+    <input id="lgUser" autocomplete="off" style="width:100%;box-sizing:border-box;padding:10px 12px;margin:4px 0 12px;border:1px solid #d4bfa8;border-radius:8px;font-size:15px">
+    <label style="font-size:13px;color:#4a2c17;font-weight:600">Password</label>
+    <input id="lgPass" type="password" style="width:100%;box-sizing:border-box;padding:10px 12px;margin:4px 0 16px;border:1px solid #d4bfa8;border-radius:8px;font-size:15px">
+    <button type="submit" style="width:100%;padding:11px;border:none;border-radius:8px;background:#c0956a;color:#fff;font-size:15px;font-weight:700;cursor:pointer">เข้าสู่ระบบ</button>
+    <button type="button" onclick="closeLogin()" style="width:100%;margin-top:8px;padding:9px;border:1px solid #d4bfa8;border-radius:8px;background:#fff;color:#7a4a1e;font-size:14px;cursor:pointer">ยกเลิก</button>
+    <div id="lgMsg" style="font-size:13px;color:#b42318;margin-top:10px;min-height:18px"></div>
+  </form>
+</div>
 <div class="header">
   <h1>📊 ข้อมูลบุคลากร</h1>
   <p>จังหวัดกาญจนบุรี ปี 2569 &nbsp;|&nbsp; ข้อมูล ณ มิถุนายน 2569 &nbsp;|&nbsp; 15 หน่วยบริการ</p>
@@ -120,6 +133,7 @@ window.onerror = function(msg, src, line, col, err) {
   <div style="background:#c0956a;color:#fff;border:1px solid #a07850;font-size:13px;line-height:1.4;font-weight:700;border-radius:10px;padding:10px 10px;width:100%;box-sizing:border-box">🏢 ข้อมูลบุคลากรแยกตามหน่วยงาน</div>
   <div style="padding-left:8px;border-left:2px solid #c0956a;margin-top:2px;display:flex;flex-direction:column;gap:4px">
     <button class="sidebar-btn" onclick="switchStab('stab-overview',this)" style="font-size:12px;padding:7px 10px">📊 ภาพรวม stability ของแต่ละหน่วยงาน</button>
+    <button class="sidebar-btn" onclick="switchSection('profcmp',this)" style="font-size:12px;padding:7px 10px">👩‍⚕️ เลือกวิชาชีพ</button>
   </div>
 </div>
 <div class="main-area">
@@ -349,6 +363,30 @@ window.onerror = function(msg, src, line, col, err) {
   </div>
 </div>
 </div><!-- end section-stability -->
+
+<!-- PROFESSION x EMPLOYMENT TYPE SECTION -->
+<div id="section-profcmp" class="section">
+<div class="content">
+  <div style="font-size:22px;font-weight:800;color:#3d6b30;margin-bottom:12px">👩‍⚕️ วิชาชีพ × ประเภทการจ้าง — เปรียบเทียบรายหน่วยบริการ</div>
+  <div class="card">
+    <div class="card-title">เลือกวิชาชีพ</div>
+    <select id="profCmpSel" onchange="renderProfCmp()" style="width:100%;padding:10px 12px;border-radius:8px;border:1px solid #d4bfa8;font-size:16px;background:#fff"></select>
+  </div>
+  <div class="kpi-grid" id="profCmpKpi"></div>
+  <div class="card">
+    <div class="card-title">สัดส่วนประเภทการจ้างแต่ละหน่วยบริการ (%) — <span id="profCmpTitle1"></span></div>
+    <canvas id="cProfCmpPct" height="95"></canvas>
+  </div>
+  <div class="card">
+    <div class="card-title">จำนวนคนแต่ละหน่วยบริการ — <span id="profCmpTitle2"></span></div>
+    <canvas id="cProfCmpCnt" height="95"></canvas>
+  </div>
+  <div class="card">
+    <div class="card-title">ตารางเปรียบเทียบ — <span id="profCmpTitle3"></span></div>
+    <div style="overflow-x:auto" id="profCmpTbl"></div>
+  </div>
+</div>
+</div><!-- end section-profcmp -->
 
 <div id="shared-content" style="display:none">
   <div class="content">
@@ -1132,6 +1170,8 @@ function switchSection(sec, btn) {
     initEmploymentSection();
   } else if(sec==='stability'){
     initStabilitySection();
+  } else if(sec==='profcmp'){
+    initProfCmp();
   } else {
     showPkssTab('overview',document.querySelector('#section-pkss .tab'));
   }
@@ -2003,7 +2043,7 @@ function showStabTab(id, btn) {
 // Init employment overview on page load
 (function(){
   function tryInit(){
-    if(typeof initEmploymentSection === 'function' && typeof Chart !== 'undefined'){
+    if(window.__dataReady && typeof initEmploymentSection === 'function' && typeof Chart !== 'undefined'){
       initEmploymentSection();
     } else {
       setTimeout(tryInit, 100);
@@ -2011,6 +2051,88 @@ function showStabTab(id, btn) {
   }
   tryInit();
 })();
+
+
+// ── PROFESSION x EMPLOYMENT TYPE ──
+var _profCmpInited=false, _cProfPct=null, _cProfCnt=null;
+const PC_FIX={'ผูู้ช่วยพยาบาล':'ผู้ช่วยพยาบาล','พนักงานทั่ั่วไป':'พนักงานทั่วไป'};
+function _pcGrp(e){let g=(e.grp||e.pos||'ไม่ระบุ').replace(' (ผู้อำนวยการ)','').trim();return PC_FIX[g]||g;}
+function _pcType(t){
+  if(t==='ข้าราชการ')return 'civil';
+  if(t==='พกส.')return 'pkss';
+  if(t==='พนักงานราชการ')return 'gov';
+  if(t==='ลูกจ้างชั่วคราวรายเดือน')return 'monthly';
+  if(t==='ลูกจ้างชั่วคราวรายวัน')return 'daily';
+  return 'other';
+}
+function initProfCmp(){
+  if(_profCmpInited){renderProfCmp();return;}
+  _profCmpInited=true;
+  const cnt={};
+  Object.values(EMP_DATA).forEach(arr=>arr.forEach(e=>{const g=_pcGrp(e);cnt[g]=(cnt[g]||0)+1;}));
+  const sel=document.getElementById('profCmpSel');
+  sel.innerHTML=Object.entries(cnt).sort((a,b)=>b[1]-a[1])
+    .map(([g,n])=>`<option value="${g}">${g} (${n} คน)</option>`).join('');
+  if(cnt['พยาบาลวิชาชีพ']) sel.value='พยาบาลวิชาชีพ';
+  renderProfCmp();
+}
+function renderProfCmp(){
+  const prof=document.getElementById('profCmpSel').value;
+  ['profCmpTitle1','profCmpTitle2','profCmpTitle3'].forEach(id=>document.getElementById(id).textContent=prof);
+  const rows=H.map((h,i)=>{
+    const r={s:h.s,n:h.n,civil:0,pkss:0,gov:0,monthly:0,daily:0,other:0,total:0};
+    (EMP_DATA['H'+i]||[]).forEach(e=>{if(_pcGrp(e)===prof){r[_pcType(e.t)]++;r.total++;}});
+    r.stable=r.civil+r.pkss+r.gov+r.monthly; return r;
+  });
+  const T=rows.reduce((a,r)=>{['civil','pkss','gov','monthly','daily','other','total','stable'].forEach(k=>a[k]=(a[k]||0)+r[k]);return a;},{});
+  const pct=(v,t)=>t?+(v/t*100).toFixed(1):0;
+  const hasN=rows.filter(r=>r.total>0).length;
+  // KPI
+  document.getElementById('profCmpKpi').innerHTML=
+    `<div class="kpi purple"><div class="kpi-label">${prof} ทั้งจังหวัด</div><div class="kpi-value">${T.total.toLocaleString()}</div><div class="kpi-sub">คน ใน ${hasN} หน่วยบริการ</div></div>`+
+    `<div class="kpi blue"><div class="kpi-label">ขรก.+พกส.+พนง.ราชการ+รายเดือน</div><div class="kpi-value">${pct(T.stable,T.total)}%</div><div class="kpi-sub">${T.stable} คน</div></div>`+
+    `<div class="kpi orange"><div class="kpi-label">ลูกจ้างชั่วคราวรายวัน</div><div class="kpi-value">${pct(T.daily,T.total)}%</div><div class="kpi-sub">${T.daily} คน</div></div>`+
+    `<div class="kpi green"><div class="kpi-label">อื่นๆ</div><div class="kpi-value">${pct(T.other,T.total)}%</div><div class="kpi-sub">${T.other} คน</div></div>`;
+  const labels=rows.map(r=>[r.s,'(n='+r.total+')']);
+  const ds=(mode)=>[
+    {label:'ข้าราชการ + พกส. + พนักงานราชการ + ลูกจ้างรายเดือน',data:rows.map(r=>mode?pct(r.stable,r.total):r.stable),backgroundColor:'#93b8f8'},
+    {label:'ลูกจ้างชั่วคราวรายวัน',data:rows.map(r=>mode?pct(r.daily,r.total):r.daily),backgroundColor:'#f8bc88'},
+    {label:'อื่นๆ',data:rows.map(r=>mode?pct(r.other,r.total):r.other),backgroundColor:'#b8b8c8'}
+  ];
+  const base=(isPct)=>({responsive:true,
+    plugins:{legend:{position:'top',labels:{font:{size:12},padding:14,boxWidth:16}},
+      datalabels:{display:ctx=>{const v=ctx.dataset.data[ctx.dataIndex];return isPct?v>=5:v>0;},
+        formatter:v=>isPct?v+'%':v,color:'#1f2937',font:{size:12,weight:'bold'}},
+      tooltip:{callbacks:{label:ctx=>ctx.dataset.label+': '+ctx.raw+(isPct?'%':' คน')}}},
+    scales:{x:{stacked:true,grid:{display:false},ticks:{font:{size:11}}},
+      y:{stacked:true,grid:{color:'#f5ede0'},ticks:{callback:v=>isPct?v+'%':v},max:isPct?100:undefined}}});
+  if(_cProfPct)_cProfPct.destroy(); if(_cProfCnt)_cProfCnt.destroy();
+  _cProfPct=new Chart(document.getElementById('cProfCmpPct'),{type:'bar',data:{labels,datasets:ds(true)},options:base(true)});
+  _cProfCnt=new Chart(document.getElementById('cProfCmpCnt'),{type:'bar',data:{labels,datasets:ds(false)},options:base(false)});
+  // Table
+  const th=(t,bg,bc,col)=>`<th style="text-align:center;padding:8px;background:${bg};${bc?'border-left:3px solid '+bc+';':''}color:${col||'#4a2c17'}">${t}</th>`;
+  const num=(v,col)=>`<td style="text-align:center;font-size:20px;font-weight:800;color:${v?col:'#ccc'};padding:6px">${v||'–'}</td>`;
+  const pc=(v,t,bg)=>`<td style="text-align:center;font-size:13px;font-weight:700;background:${t&&v?bg:'transparent'};color:#444">${t&&v?pct(v,t)+'%':''}</td>`;
+  let h=`<table style="width:100%;border-collapse:collapse;font-size:14px"><thead><tr>`+
+    th('หน่วยบริการ','#f5ede0')+th('รวม','#f5ede0')+
+    th('ข้าราชการ','#bde0fe','#7ec8f4','#0c4a6e')+th('พกส.','#fef08a','#fde047','#713f12')+
+    th('พนง.ราชการ','#e9d5ff','#c4b5fd','#4c1d95')+th('รายเดือน','#bbf7d0','#86efac','#14532d')+
+    th('รวมกลุ่ม 1','#cfe0fd','#93b8f8','#1e3a8a')+th('%','#e0ebfe')+
+    th('รายวัน','#fed7aa','#fdba74','#7c2d12')+th('%','#ffedd5')+
+    th('อื่นๆ','#e2e2ea','#b8b8c8','#334155')+th('%','#f1f1f5')+`</tr></thead><tbody>`;
+  rows.forEach(r=>{
+    h+=`<tr style="border-bottom:1px solid #f0e6da${r.total?'':';opacity:.5'}"><td style="padding:6px 10px;font-weight:600">${r.n}</td>`+
+      num(r.total,'#4a2c17')+num(r.civil,'#1a3a80')+num(r.pkss,'#713f12')+num(r.gov,'#4c1d95')+num(r.monthly,'#0f766e')+
+      num(r.stable,'#1e3a8a')+pc(r.stable,r.total,'#dbe8fe')+
+      num(r.daily,'#7a3500')+pc(r.daily,r.total,'#ffe4cc')+
+      num(r.other,'#475569')+pc(r.other,r.total,'#e8e8ee')+`</tr>`;
+  });
+  h+=`<tr style="background:#f5ede0;font-weight:800"><td style="padding:8px 10px">รวมทั้งจังหวัด</td>`+
+    num(T.total,'#4a2c17')+num(T.civil,'#1a3a80')+num(T.pkss,'#713f12')+num(T.gov,'#4c1d95')+num(T.monthly,'#0f766e')+
+    num(T.stable,'#1e3a8a')+pc(T.stable,T.total,'#dbe8fe')+num(T.daily,'#7a3500')+pc(T.daily,T.total,'#ffe4cc')+
+    num(T.other,'#475569')+pc(T.other,T.total,'#e8e8ee')+`</tr></tbody></table>`;
+  document.getElementById('profCmpTbl').innerHTML=h;
+}
 
 function switchStab(tabId, btn) {
   _stabInited = false;
@@ -2023,5 +2145,167 @@ function switchStab(tabId, btn) {
   }, 120);
 }
 
+</script>
+<script>
+// ═══ LOGIN + LIVE DATA FROM GOOGLE SHEETS ═══
+const LIVE_SHEETS=[
+ '13n8HZZ3fyeW1sEQj5HUg1G0Mzyvp7E4mZqoKKhI_OCg', // H0 สมเด็จพระสังฆราชฯ 19
+ '1Bi2hPuG4YTkHnHBcJaXfeA5JaydJyWmcdSATrBSB3MY', // H1 ทองผาภูมิ
+ '12XXsjr5YvilZAkqNaxddNb5TuWfseJEXGnNXadM7HMI', // H2 บ่อพลอย
+ '1Z6rkX5ptlwaQpGoQF-usTYJCXzIF7S6DFIZ-x_f5HlM', // H3 เจ้าคุณไพบูลย์ฯ
+ '1dqFIf_e5ypef2a-ncEiDpfHqNcFSj0jnLrQ6oPBSOTM', // H4 ไทรโยค
+ '19i3eAzWquVt94KPavK3WZZYchJ4ZGWQBHgUgpdskLvw', // H5 สังขละบุรี
+ '1pQ-EIGSTTqVEZAzo_7v_O4Vhp1Nws-EL2g-p_412pxM', // H6 ด่านมะขามเตี้ย
+ '1XltpiTR2MPI9WIgq1e85ML2k0uL8sAVN1raNJPvN9l0', // H7 เลาขวัญ
+ '1-K4rpiLZQmL44MzKFH_HO6zuukDCioWoO2iDg5XiL9k', // H8 ห้วยกระเจาฯ
+ '1eZlMxpMHfGfl2k_zrOfgB3YSqZYLlQ1-7Gy8JWnWfGk', // H9 สถานพระบารมี
+ '16lDmpev7lCV2YuKLo5qYUnCmn2qG9IY0e8-idsBch0k', // H10 สมเด็จพระปิยะฯ
+ '1nPU5DwSf2HDMmcfjhvqfs-NPF2pEuxdqN3aP5wWrJlQ', // H11 ศุกร์ศิริฯ
+ '1fTMHX-s9XLWeNZigSeZdkxQoni7OBJP-HJicx-2A64c', // H12 ท่ากระดาน
+ '1OCBEFGk0lhUIy0gLVHGmbrdVlZsaTdxSJ-w2H0sDumE', // H13 หนองปรือ
+ '1uHtsKVFqcncTzPgzTwxfwTe59YowMnw3tvqeSG7fRXw'  // H14 สสจ.กาญจนบุรี
+];
+const LIVE_TAB='บุคลากรปัจจุบัน';
+const GRP_FIX={'ผูู้ช่วยพยาบาล':'ผู้ช่วยพยาบาล','พนักงานทั่ั่วไป':'พนักงานทั่วไป'};
+const TK_MAP={'ข้าราชการ':'civil','พกส.':'pkss','พนักงานราชการ':'gov','ลูกจ้างชั่วคราวรายเดือน':'monthly','ลูกจ้างชั่วคราวรายวัน':'daily','ลูกจ้างประจำ':'regular'};
+// template column order (from column B)
+const COL_DEF={no:0,prefix:1,first:2,last:3,dob:4,age:5,gen:6,grp:7,note:8,type:9,pos:10,start:11,yrs:12,edu:13,head:14,dept:15};
+
+// ── Login: gates personal data (names) only ──
+let __authed=false, __afterLogin=null;
+function requireAuth(fn){
+  if(__authed){fn();return;}
+  __afterLogin=fn;
+  document.getElementById('lgMsg').textContent='';
+  document.getElementById('lgPass').value='';
+  document.getElementById('loginOverlay').style.display='flex';
+  setTimeout(()=>document.getElementById('lgUser').focus(),50);
+}
+function closeLogin(){ document.getElementById('loginOverlay').style.display='none'; __afterLogin=null; }
+function doLogin(ev){
+  ev.preventDefault();
+  const u=document.getElementById('lgUser').value.trim(), pw=document.getElementById('lgPass').value;
+  if(u==='VIP01' && pw==='VIP01'){
+    __authed=true;
+    document.getElementById('loginOverlay').style.display='none';
+    const f=__afterLogin; __afterLogin=null; if(f) f();
+  } else {
+    document.getElementById('lgMsg').textContent='User หรือ Password ไม่ถูกต้อง';
+  }
+  return false;
+}
+// wrap every function that shows staff names
+(function(){
+  ['showStaff','showEmpStaff','showEmpDeptStaff'].forEach(name=>{
+    const orig=window[name]; if(typeof orig!=='function') return;
+    window[name]=function(...a){ requireAuth(()=>orig.apply(this,a)); };
+  });
+  const origRetire=window.renderRetireDetail;
+  if(typeof origRetire==='function'){
+    window.renderRetireDetail=function(...a){
+      if(__authed) return origRetire.apply(this,a);
+      const box=document.getElementById('retireDetail');
+      if(box) box.innerHTML='<div style="text-align:center;padding:26px"><button onclick="requireAuth(()=>renderRetireDetail())" style="padding:10px 22px;border:none;border-radius:10px;background:#c0956a;color:#fff;font-size:15px;font-weight:700;cursor:pointer">🔒 เข้าสู่ระบบเพื่อดูรายชื่อ</button></div>';
+    };
+    window.renderRetireDetail(); // clear names rendered at page load
+  }
+})();
+
+let _gvSeq=0;
+function gvizFetch(id){
+  return new Promise((resolve,reject)=>{
+    const cb='__gv'+(++_gvSeq);
+    const s=document.createElement('script');
+    const done=()=>{clearTimeout(t);delete window[cb];s.remove();};
+    const t=setTimeout(()=>{done();reject('timeout (ยังไม่ได้แชร์ Sheet?)');},15000);
+    window[cb]=r=>{done(); if(r && r.status!=='error' && r.table) resolve(r.table); else reject((r&&r.errors&&r.errors[0]&&r.errors[0].detailed_message)||'error');};
+    s.onerror=()=>{done();reject('network');};
+    s.src='https://docs.google.com/spreadsheets/d/'+id+'/gviz/tq?sheet='+encodeURIComponent(LIVE_TAB)+
+          '&range=B3:Q3000&headers=1&tqx=responseHandler:'+cb;
+    document.head.appendChild(s);
+  });
+}
+
+function _colIdx(labels){
+  const L=labels.map(x=>(x||'').replace(/\s+/g,''));
+  const f=fn=>L.findIndex(fn);
+  const m={
+    prefix:f(x=>x.startsWith('คำนำหน้า')), first:f(x=>x.startsWith('ชื่อ')), last:f(x=>x.startsWith('นามสกุล')),
+    age:f(x=>x.startsWith('อายุ')&&!x.startsWith('อายุงาน')), grp:f(x=>x.startsWith('กลุ่มวิชาชีพ')),
+    note:f(x=>x.startsWith('หมายเหตุ')), type:f(x=>x.startsWith('ประเภทการจ้าง')), pos:f(x=>x.startsWith('ตำแหน่ง')),
+    start:f(x=>x.startsWith('วันที่เริ่มงาน')), yrs:f(x=>x.startsWith('อายุงาน')), head:f(x=>x.startsWith('หัวหน้างาน')),
+    dept:f(x=>x.includes('แผนก'))
+  };
+  Object.keys(m).forEach(k=>{if(m[k]<0) m[k]=COL_DEF[k];});
+  return m;
+}
+
+let _excluded=0;
+function tableToEmp(tb){
+  const ci=_colIdx(tb.cols.map(c=>c.label));
+  const cell=(row,i)=>{const c=row.c[i]; if(!c) return ''; return String(c.f!=null?c.f:(c.v!=null?c.v:'')).trim();};
+  const num=(row,i)=>{const c=row.c[i]; if(!c) return null; const v=typeof c.v==='number'?c.v:parseInt(c.f||c.v,10); return isNaN(v)?null:Math.round(v);};
+  const out=[];
+  tb.rows.forEach(r=>{
+    if(!r||!r.c) return;
+    const first=cell(r,ci.first), last=cell(r,ci.last);
+    if(!first && !last) return;                       // empty row
+    let grp=cell(r,ci.grp); grp=GRP_FIX[grp]||grp;
+    let dept=cell(r,ci.dept);
+    const t0=cell(r,ci.type);
+    if(!grp || !dept || !t0){ _excluded++; return; }  // incomplete → exclude
+    const note=cell(r,ci.note);
+    if(note.includes('ผู้อำนวยการ')){
+      if(grp==='แพทย์') dept='องค์กรแพทย์';
+      grp=grp+' (ผู้อำนวยการ)';
+    }
+    const t=t0;
+    const head=cell(r,ci.head);
+    out.push({n:(first+' '+last).trim(),grp,t,tk:TK_MAP[t]||'other',pos:cell(r,ci.pos),
+      start:cell(r,ci.start),yrs:cell(r,ci.yrs),age:num(r,ci.age),
+      head:head?head.charAt(0).toUpperCase():null,dept});
+  });
+  return out;
+}
+
+function rebuildTC(i){
+  const d={civil:0,gov:0,pkss:0,daily:0,monthly:0,regular:0,other:0,total:0};
+  (EMP_DATA['H'+i]||[]).forEach(e=>{d[TK_MAP[e.t]||'other']++;d.total++;});
+  if(TC[i]) Object.assign(TC[i],d);
+}
+
+const _isBlank=v=>!v||v==='ไม่ระบุ';
+async function loadLiveData(){
+  const hp=document.querySelector('.header p');
+  if(hp) hp.innerHTML='จังหวัดกาญจนบุรี &nbsp;|&nbsp; 15 หน่วยบริการ &nbsp;|&nbsp; ⏳ กำลังดึงข้อมูลจาก Google Sheets…';
+  const res=await Promise.allSettled(LIVE_SHEETS.map(id=>gvizFetch(id)));
+  const ok=[],fail=[],exc=[];
+  res.forEach((r,i)=>{
+    const name=(H[i]&&H[i].n)||('H'+i);
+    _excluded=0;
+    let rows=null;
+    if(r.status==='fulfilled'){ rows=tableToEmp(r.value); if(!rows.length){rows=null;fail.push(name+' (ไม่พบข้อมูล)');} else ok.push(name); }
+    else fail.push(name+' ('+r.reason+')');
+    if(!rows){ // fallback snapshot — apply same exclusion rule
+      const snap=EMP_DATA['H'+i]||[];
+      rows=snap.filter(e=>!(_isBlank(e.grp)||_isBlank(e.dept)||_isBlank(e.t)));
+      _excluded=snap.length-rows.length;
+    }
+    EMP_DATA['H'+i]=rows; rebuildTC(i);
+    if(_excluded) exc.push(name+': '+_excluded);
+  });
+  const nExc=exc.reduce((s,x)=>s+parseInt(x.split(': ')[1]),0);
+  const now=new Date().toLocaleString('th-TH',{dateStyle:'medium',timeStyle:'short'});
+  if(hp){
+    hp.innerHTML='จังหวัดกาญจนบุรี &nbsp;|&nbsp; 15 หน่วยบริการ &nbsp;|&nbsp; '+
+      (fail.length===0
+        ? '<span style="background:#dcfce7;color:#166534;padding:2px 10px;border-radius:10px;font-weight:700">🟢 ข้อมูลสดจาก Google Sheets ครบ 15/15 · '+now+'</span>'
+        : '<span title="'+fail.join('\n')+'" style="background:#ffedd5;color:#9a3412;padding:2px 10px;border-radius:10px;font-weight:700;cursor:help">🟠 สด '+ok.length+'/15 · ใช้ข้อมูลสำรอง: '+fail.map(f=>f.split(' (')[0]).join(', ')+'</span>')+
+      (nExc?' &nbsp;<span title="ตัดออกเพราะกลุ่มวิชาชีพ / ประเภทการจ้าง / แผนก เว้นว่าง\n'+exc.join('\n')+'" style="background:#fef9c3;color:#713f12;padding:2px 10px;border-radius:10px;font-weight:700;cursor:help">⚠️ ข้อมูลไม่ครบ ตัดออก '+nExc+' คน</span>':'');
+  }
+  if(fail.length) console.warn('Live data fallback:',fail);
+}
+// load data immediately — aggregated views need no login
+loadLiveData().finally(()=>{ window.__dataReady=true; });
 </script>
 </body></html>
