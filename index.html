@@ -500,6 +500,8 @@ const LIVE_SHEETS=[
 ];
 const LIVE_HNAMES=['สมเด็จพระสังฆราชฯ 19','รพ.ทองผาภูมิ','รพ.บ่อพลอย','รพ.เจ้าคุณไพบูลย์ฯ','รพ.ไทรโยค','รพ.สังขละบุรี','รพ.ด่านมะขามเตี้ย','รพ.เลาขวัญ','รพ.ห้วยกระเจาฯ','รพ.สถานพระบารมี','รพ.สมเด็จพระปิยะฯ','รพ.ศุกร์ศิริฯ','รพ.ท่ากระดาน','รพ.หนองปรือ','สสจ.กาญจนบุรี'];
 const LIVE_TAB='บุคลากรปัจจุบัน', LIVE_FIRST_ROW=4;
+const DEPT_OPTIONAL=[14];            // สสจ.กาญจนบุรี: แผนกยังไม่กรอก → นับได้, แสดงเป็น 'ไม่ระบุแผนก'
+const NO_DEPT='ไม่ระบุแผนก';
 const GRP_FIX={'ผูู้ช่วยพยาบาล':'ผู้ช่วยพยาบาล','พนักงานทั่ั่วไป':'พนักงานทั่วไป'};
 const TK_MAP={'ข้าราชการ':'civil','พกส.':'pkss','พนักงานราชการ':'gov','ลูกจ้างชั่วคราวรายเดือน':'monthly','ลูกจ้างชั่วคราวรายวัน':'daily','ลูกจ้างประจำ':'regular'};
 const TYPE_OF_KIND={civil:'ข้าราชการ',pkss:'พกส.',gov:'พนักงานราชการ',daily:'ลูกจ้างชั่วคราวรายวัน'};
@@ -554,9 +556,9 @@ function _parseTable(tb, hi){
     const dept=cell(r,ci.dept), t=cell(r,ci.type), pos=cell(r,ci.pos);
     if(!first && !last && !grp && !t && !dept && !pos) return;            // blank row
     const name=(first+' '+last).trim();
-    const miss=[]; if(!name) miss.push('ชื่อ'); if(!grp) miss.push('กลุ่มวิชาชีพ'); if(!t) miss.push('ประเภทการจ้าง'); if(!dept) miss.push('แผนก');
+    const miss=[]; if(!name) miss.push('ชื่อ'); if(!grp) miss.push('กลุ่มวิชาชีพ'); if(!t) miss.push('ประเภทการจ้าง'); if(!dept && !DEPT_OPTIONAL.includes(hi)) miss.push('แผนก');
     if(miss.length){ excl.push({n:name||'(ไม่มีชื่อ)',row:LIVE_FIRST_ROW+ri,miss,t,grp,dept,pos}); return; }
-    let g=grp, d=dept;
+    let g=grp, d=dept||NO_DEPT;
     if(cell(r,ci.note).includes('ผู้อำนวยการ')){ if(g==='แพทย์') d='องค์กรแพทย์'; g=g+' (ผู้อำนวยการ)'; }
     const head=cell(r,ci.head);
     out.push({n:name,pre:cell(r,ci.prefix),grp:g,t,tk:TK_MAP[t]||'other',pos,start:cell(r,ci.start),yrs:cell(r,ci.yrs),
@@ -576,7 +578,7 @@ function __applyLive(kind, obj, sub){
       if(L.rows[k]){ obj[k]=L.rows[k]; continue; }
       const snap=obj[k]||[];   // snapshot fallback — same exclusion rule
       const keep=[],ex=[];
-      snap.forEach(e=>{const miss=[]; if(_isBlank(e.grp))miss.push('กลุ่มวิชาชีพ'); if(_isBlank(e.t))miss.push('ประเภทการจ้าง'); if(_isBlank(e.dept))miss.push('แผนก');
+      snap.forEach(e=>{const miss=[]; if(_isBlank(e.grp))miss.push('กลุ่มวิชาชีพ'); if(_isBlank(e.t))miss.push('ประเภทการจ้าง'); if(_isBlank(e.dept)){ if(DEPT_OPTIONAL.includes(i)) e.dept=NO_DEPT; else miss.push('แผนก'); }
         if(miss.length) ex.push({n:e.n,row:null,miss,t:e.t,grp:e.grp,dept:e.dept,pos:e.pos}); else keep.push(e);});
       obj[k]=keep; L.excl[k]=ex;
     }
@@ -625,7 +627,7 @@ function __applyLive(kind, obj, sub){
     const k='H'+i;
     if(r.status==='fulfilled'){
       const {out,excl}=_parseTable(r.value,i);
-      if(out.length){ L.rows[k]=out; L.excl[k]=excl; L.ok.push(i); return; }
+      if(out.length||excl.length){ L.rows[k]=out; L.excl[k]=excl; L.ok.push(i); return; }  // fetched OK (even if every row is incomplete)
       L.fail.push({i,why:'ไม่พบข้อมูล'});
     } else L.fail.push({i,why:String(r.reason)});
   });
